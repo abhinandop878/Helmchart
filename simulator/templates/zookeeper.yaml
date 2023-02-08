@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-zookeeper
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-zookeeper
+  serviceName: {{ .Release.Name }}-zookeeper
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-zookeeper
+    spec:
+      containers:
+          - name: zookeeper
+            image: "{{ .Values.zookeeper.image.repository }}:{{ .Values.zookeeper.image.tag }}"
+            imagePullPolicy: "{{ .Values.zookeeper.image.pullPolicy }}"
+            ports:
+              - containerPort: 2181
+                name: client
+            env:
+              - name: ZOO_MY_ID
+                value: "1"
+              - name: ZOO_SERVERS
+                value: "server.1={{ .Release.Name }}-zookeeper-0.{{ .Release.Name }}-zookeeper.default.svc.cluster.local:2888:3888"
+            livenessProbe:
+              tcpSocket:
+                port: 2181
+              initialDelaySeconds: 30
+              timeoutSeconds: 5
+            readinessProbe:
+              tcpSocket:
+                port: 2181
+              initialDelaySeconds: 5
+              timeoutSeconds: 1
