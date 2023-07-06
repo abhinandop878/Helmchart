@@ -1,44 +1,32 @@
-#!/usr/bin/env bash
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.streaming.connectors.kafka.KafkaSource;
+import org.apache.flink.streaming.connectors.kafka.internals.KafkaTopicPartition;
+import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 
-# Measure the start time
-start_time=$(date +%s)
+import java.util.Properties;
 
-nohup python3 /opt/flink/usrlib/server1.py &
+public class KafkaSourceCreator {
 
-# Rest of the script...
+    public static KafkaSource<String> createKafkaSource(String bootstrapServers, String topic, String groupId) {
+        Properties properties = new Properties();
+        properties.setProperty("bootstrap.servers", bootstrapServers);
+        properties.setProperty("group.id", groupId);
 
-# Measure the boot-up time for server1.py
-server_boot_time=$(( $(date +%s) - start_time ))
-echo "Server1.py boot-up time: $server_boot_time seconds"
+        KafkaTopicPartition topicPartition = new KafkaTopicPartition(topic, 0);
+        KafkaSource<String> kafkaSource = new KafkaSource<>(new SimpleStringSchema(), properties);
+        kafkaSource.setStartFromSpecificOffsets(topicPartition);
 
-# Measure the start time again
-start_time=$(date +%s)
+        return kafkaSource;
+    }
 
-# Rest of the script...
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-args=("$@")
-if [ "$1" = "help" ]; then
-    # Help command
+        KafkaSource<String> source = createKafkaSource("172.22.223.112:9092", "input-topic", "my-group");
 
-elif [ "$1" = "jobmanager" ]; then
-    # Job Manager command
+        env.addSource(source).print();
 
-elif [ "$1" = ${COMMAND_STANDALONE} ]; then
-    # Standalone Job Manager command
-
-elif [ "$1" = ${COMMAND_HISTORY_SERVER} ]; then
-    # History Server command
-
-elif [ "$1" = "taskmanager" ]; then
-    # Task Manager command
-
-fi
-
-args=("${args[@]}")
-
-# Measure the boot-up time for Flink
-flink_boot_time=$(( $(date +%s) - start_time ))
-echo "Flink boot-up time: $flink_boot_time seconds"
-
-# Running command in pass-through mode
-exec $(drop_privs_cmd) "${args[@]}"
+        env.execute("KafkaSourceExample");
+    }
+}
