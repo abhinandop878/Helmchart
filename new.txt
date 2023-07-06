@@ -3,14 +3,10 @@ import org.apache.flink.streaming.connectors.kafka.KafkaSource;
 import org.apache.flink.streaming.connectors.kafka.internals.KafkaTopicPartition;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.streaming.connectors.kafka.internals.OffsetsInitializer;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 
 import java.util.Properties;
 
-import lombok.Getter;
-import lombok.Setter;
-
-@Getter
-@Setter
 public class KafkaSourceBuilder {
 
     private String bootstrapServers;
@@ -23,11 +19,12 @@ public class KafkaSourceBuilder {
         this.groupId = groupId;
     }
 
-    public KafkaSource<String> build() {
+    public KafkaSource<String> build() throws Exception {
         Properties properties = new Properties();
         properties.setProperty("bootstrap.servers", bootstrapServers);
         properties.setProperty("group.id", groupId);
 
+        KafkaTopicPartition topicPartition = new KafkaTopicPartition(topic, 0);
         KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
                 .setBootstrapServers(bootstrapServers)
                 .setGroupId(groupId)
@@ -36,6 +33,15 @@ public class KafkaSourceBuilder {
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
+        try {
+            kafkaSource.getKafkaConsumer().subscribe(java.util.Collections.singletonList(topic));
+            kafkaSource.getKafkaConsumer().seekToEnd(java.util.Collections.singletonList(topicPartition));
+        } catch (UnknownTopicOrPartitionException e) {
+            throw e; // Rethrow the exception to be handled in the calling code
+        } catch (Exception e) {
+            throw new Exception("Error while setting up Kafka source: " + e.getMessage(), e);
+        }
+
         return kafkaSource;
     }
 
@@ -43,10 +49,21 @@ public class KafkaSourceBuilder {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         KafkaSourceBuilder builder = new KafkaSourceBuilder("172.22.223.112:9092", "input-topic", "my-group");
-        KafkaSource<String> source = builder.build();
+        KafkaSource<String> source = null;
 
-        env.addSource(source).print();
+        try {
+            source = builder.build();
+        } catch (UnknownTopicOrPartitionException e) {
+            System.err.println("Kafka topic does not exist: " + e.getMessage());
+            // Handle the missing topic exception here
+        } catch (Exception e) {
+            System.err.println("Error while setting up Kafka source: " + e.getMessage());
+            // Handle any other exception that occurred during Kafka setup
+        }
 
-        env.execute("KafkaSourceExample");
+        if (source != null) {
+            env.addSource(source).print();
+            env.execute("KafkaSourceExample");
+        }
     }
 }
