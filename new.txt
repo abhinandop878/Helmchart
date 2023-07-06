@@ -1,20 +1,44 @@
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.streaming.connectors.kafka.KafkaSource;
 import org.apache.flink.streaming.connectors.kafka.internals.KafkaTopicPartition;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 
 import java.util.Properties;
 
-public class KafkaSourceCreator {
+public class KafkaSourceBuilder {
 
-    public static KafkaSource<String> createKafkaSource(String bootstrapServers, String topic, String groupId) {
+    private String bootstrapServers;
+    private String topic;
+    private String groupId;
+
+    public KafkaSourceBuilder setBootstrapServers(String bootstrapServers) {
+        this.bootstrapServers = bootstrapServers;
+        return this;
+    }
+
+    public KafkaSourceBuilder setTopic(String topic) {
+        this.topic = topic;
+        return this;
+    }
+
+    public KafkaSourceBuilder setGroupId(String groupId) {
+        this.groupId = groupId;
+        return this;
+    }
+
+    public KafkaSource<String> build() {
         Properties properties = new Properties();
         properties.setProperty("bootstrap.servers", bootstrapServers);
         properties.setProperty("group.id", groupId);
 
         KafkaTopicPartition topicPartition = new KafkaTopicPartition(topic, 0);
-        KafkaSource<String> kafkaSource = new KafkaSource<>(new SimpleStringSchema(), properties);
+        KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
+                .setBootstrapServers(bootstrapServers)
+                .setGroupId(groupId)
+                .setTopics(topic)
+                .setValueOnlyDeserializer(new SimpleStringSchema())
+                .build();
+
         kafkaSource.setStartFromSpecificOffsets(topicPartition);
 
         return kafkaSource;
@@ -23,7 +47,11 @@ public class KafkaSourceCreator {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        KafkaSource<String> source = createKafkaSource("172.22.223.112:9092", "input-topic", "my-group");
+        KafkaSource<String> source = new KafkaSourceBuilder()
+                .setBootstrapServers("172.22.223.112:9092")
+                .setTopic("input-topic")
+                .setGroupId("my-group")
+                .build();
 
         env.addSource(source).print();
 
