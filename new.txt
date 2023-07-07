@@ -1,69 +1,19 @@
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.KafkaSource;
-import org.apache.flink.streaming.connectors.kafka.internals.KafkaTopicPartition;
-import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
-import org.apache.flink.streaming.connectors.kafka.internals.OffsetsInitializer;
-import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import java.util.concurrent.TimeUnit;
 
-import java.util.Properties;
+public class DataStreamJob {
 
-public class KafkaSourceBuilder {
-
-    private String bootstrapServers;
-    private String topic;
-    private String groupId;
-
-    public KafkaSourceBuilder(String bootstrapServers, String topic, String groupId) {
-        this.bootstrapServers = bootstrapServers;
-        this.topic = topic;
-        this.groupId = groupId;
-    }
-
-    public KafkaSource<String> build() throws Exception {
-        Properties properties = new Properties();
-        properties.setProperty("bootstrap.servers", bootstrapServers);
-        properties.setProperty("group.id", groupId);
-
-        KafkaTopicPartition topicPartition = new KafkaTopicPartition(topic, 0);
-        KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
-                .setBootstrapServers(bootstrapServers)
-                .setGroupId(groupId)
-                .setTopics(topic)
-                .setStartingOffsets(OffsetsInitializer.latest())
-                .setValueOnlyDeserializer(new SimpleStringSchema())
-                .build();
-
-        try {
-            kafkaSource.getKafkaConsumer().subscribe(java.util.Collections.singletonList(topic));
-            kafkaSource.getKafkaConsumer().seekToEnd(java.util.Collections.singletonList(topicPartition));
-        } catch (UnknownTopicOrPartitionException e) {
-            throw e; // Rethrow the exception to be handled in the calling code
-        } catch (Exception e) {
-            throw new Exception("Error while setting up Kafka source: " + e.getMessage(), e);
-        }
-
-        return kafkaSource;
-    }
+    private static final Logger logger = LoggerFactory.getLogger(DataStreamJob.class);
 
     public static void main(String[] args) throws Exception {
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        KafkaSourceBuilder builder = new KafkaSourceBuilder("172.22.223.112:9092", "input-topic", "my-group");
-        KafkaSource<String> source = null;
+        long startTime = System.nanoTime(); // Record the start time
 
-        try {
-            source = builder.build();
-        } catch (UnknownTopicOrPartitionException e) {
-            System.err.println("Kafka topic does not exist: " + e.getMessage());
-            // Handle the missing topic exception here
-        } catch (Exception e) {
-            System.err.println("Error while setting up Kafka source: " + e.getMessage());
-            // Handle any other exception that occurred during Kafka setup
-        }
+        // Your existing code
 
-        if (source != null) {
-            env.addSource(source).print();
-            env.execute("KafkaSourceExample");
-        }
+        long endTime = System.nanoTime(); // Record the end time
+
+        long duration = TimeUnit.NANOSECONDS.toMillis(endTime - startTime); // Calculate the duration in milliseconds
+
+        logger.info("Loading time: " + duration + " ms");
     }
 }
