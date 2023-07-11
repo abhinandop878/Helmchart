@@ -1,1 +1,48 @@
-Our objective is to implement three FHR instances while minimizing resource utilization. To accomplish this, we have developed a Docker file that combines a Flink job with a Python module responsible for processing FHR 1. Since FHR 1 requires processing in most cases, we have created separate Docker files for the other two Python modules responsible for FHR 2 and FHR 3. The Flink job plays a crucial role in dividing the input stream into three separate streams. One of these streams is processed by a Python module deployed within the Flink job, while the other two streams are sent to an external Python module for additional processing. This architecture necessitates a total of three pods in Kubernetes: two to host the Python modules and one with Python and Flink, enabling them to handle the three separate Flask APIs.
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+
+public class EarlierAggregationExample {
+
+    public static void main(String[] args) throws Exception {
+        // Set up the execution environment
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        // Create a data stream
+        DataStream<Integer> dataStream = env.fromElements(1, 2, 3, 4, 5);
+
+        // Apply earlier aggregation
+        DataStream<Integer> aggregatedStream = dataStream
+                .keyBy(value -> "key") // Group by a constant key
+                .aggregate(new SumAggregateFunction());
+
+        // Print the results
+        aggregatedStream.print();
+
+        // Execute the Flink job
+        env.execute("Earlier Aggregation Example");
+    }
+
+    // Custom AggregateFunction to calculate the sum
+    public static class SumAggregateFunction implements AggregateFunction<Integer, Integer, Integer> {
+        @Override
+        public Integer createAccumulator() {
+            return 0;
+        }
+
+        @Override
+        public Integer add(Integer value, Integer accumulator) {
+            return accumulator + value;
+        }
+
+        @Override
+        public Integer getResult(Integer accumulator) {
+            return accumulator;
+        }
+
+        @Override
+        public Integer merge(Integer a, Integer b) {
+            return a + b;
+        }
+    }
+}
