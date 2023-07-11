@@ -1,4 +1,4 @@
-import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
@@ -14,7 +14,7 @@ public class EarlierAggregationExample {
         // Apply earlier aggregation
         DataStream<Integer> aggregatedStream = dataStream
                 .keyBy(value -> "key") // Group by a constant key
-                .aggregate(new SumAggregateFunction());
+                .reduce(new SumReduceFunction());
 
         // Print the results
         aggregatedStream.print();
@@ -23,26 +23,11 @@ public class EarlierAggregationExample {
         env.execute("Earlier Aggregation Example");
     }
 
-    // Custom AggregateFunction to calculate the sum
-    public static class SumAggregateFunction implements AggregateFunction<Integer, Integer, Integer> {
+    // Custom ReduceFunction to calculate the sum
+    public static class SumReduceFunction implements ReduceFunction<Integer> {
         @Override
-        public Integer createAccumulator() {
-            return 0;
-        }
-
-        @Override
-        public Integer add(Integer value, Integer accumulator) {
-            return accumulator + value;
-        }
-
-        @Override
-        public Integer getResult(Integer accumulator) {
-            return accumulator;
-        }
-
-        @Override
-        public Integer merge(Integer a, Integer b) {
-            return a + b;
+        public Integer reduce(Integer value1, Integer value2) {
+            return value1 + value2;
         }
     }
 }
