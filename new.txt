@@ -1,33 +1,103 @@
-import org.apache.flink.api.common.functions.ReduceFunction;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.windowing.assigners.SlidingProcessingTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 
-public class EarlierAggregationExample {
+import java.util.Properties;
 
+public class JsonEventAggregationExample {
     public static void main(String[] args) throws Exception {
-        // Set up the execution environment
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        // Create a data stream
-        DataStream<Integer> dataStream = env.fromElements(1, 2, 3, 4, 5);
+        // Set up Kafka consumer with a JSON deserializer
+        Properties properties = new Properties();
+        properties.setProperty("bootstrap.servers", "localhost:9092");
+        properties.setProperty("group.id", "my-consumer-group");
 
-        // Apply earlier aggregation
-        DataStream<Integer> aggregatedStream = dataStream
-                .keyBy(value -> "key") // Group by a constant key
-                .reduce(new SumReduceFunction());
+        FlinkKafkaConsumer<String> kafkaConsumer = new FlinkKafkaConsumer<>(
+                "your-kafka-topic",
+                new SimpleStringSchema(),
+                properties
+        );
 
-        // Print the results
+        // Create a data stream from Kafka
+        DataStream<String> stream = env.addSource(kafkaConsumer);
+
+        // Parse JSON events into a custom event class
+        DataStream<Event> eventStream = stream.map(jsonString -> {
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode jsonNode = objectMapper.readTree(jsonString);
+            String key = jsonNode.get("key").asText();
+            int value = jsonNode.get("value").asInt();
+            return new Event(key, value);
+        });
+
+        // Apply windowing and aggregation
+        DataStream<AggregateResult> aggregatedStream = eventStream
+                .keyBy(Event::getKey)
+                .window(SlidingProcessingTimeWindows.of(Time.seconds(10), Time.seconds(5)))
+                .aggregate(new EventAggregateFunction());
+
+        // Print the aggregated results to stdout
         aggregatedStream.print();
 
         // Execute the Flink job
-        env.execute("Earlier Aggregation Example");
+        env.execute("Event Aggregation Example");
     }
 
-    // Custom ReduceFunction to calculate the sum
-    public static class SumReduceFunction implements ReduceFunction<Integer> {
+    public static class Event {
+        private String key;
+        private int value;
+
+        public Event(String key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+
+        // getters, setters, and constructors
+
+        // ...
+    }
+
+    public static class AggregateResult {
+        private String key;
+        private int sum;
+        private int count;
+
+        // getters, setters, and constructors
+
+        // ...
+    }
+
+    public static class EventAggregateFunction implements AggregateFunction<Event, AggregateResult, AggregateResult> {
         @Override
-        public Integer reduce(Integer value1, Integer value2) {
-            return value1 + value2;
+        public AggregateResult createAccumulator() {
+            return new AggregateResult("", 0, 0);
+        }
+
+        @Override
+        public AggregateResult add(Event event, AggregateResult accumulator) {
+            accumulator.setKey(event.getKey());
+            accumulator.setSum(accumulator.getSum() + event.getValue());
+            accumulator.setCount(accumulator.getCount() + 1);
+            return accumulator;
+        }
+
+        @Override
+        public AggregateResult getResult(AggregateResult accumulator) {
+            return accumulator;
+        }
+
+        @Override
+        public AggregateResult merge(AggregateResult a, AggregateResult b) {
+            a.setSum(a.getSum() + b.getSum());
+            a.setCount(a.getCount() + b.getCount());
+            return a;
         }
     }
 }
