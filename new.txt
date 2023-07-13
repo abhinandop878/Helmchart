@@ -133,65 +133,136 @@ public class JsonEventAggregationExample {
 
 
 
-
-
+===================================================================================================================================
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor;
+import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 
-public class DataAggregationExample {
+import java.io.IOException;
+import java.util.Properties;
 
+public class KafkaDataAggregationExample {
     public static void main(String[] args) throws Exception {
         // Set up the execution environment
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        // Create a stream of data
-        DataStream<Tuple2<String, Integer>> dataStream = env.fromElements(
-                new Tuple2<>("Key1", 1),
-                new Tuple2<>("Key2", 2),
-                new Tuple2<>("Key1", 3),
-                new Tuple2<>("Key2", 4),
-                new Tuple2<>("Key1", 5),
-                new Tuple2<>("Key2", 6)
-        );
+        // Set the Kafka configuration
+        Properties props = new Properties();
+        props.setProperty("bootstrap.servers", "localhost:9092");
+        props.setProperty("group.id", "flink-group");
 
-        // Apply sliding window and keyBy
-        DataStream<Tuple2<String, Integer>> resultStream = dataStream
-                .keyBy(0) // Key by the first field of the tuple (the key)
-                .timeWindow(Time.seconds(5)) // Define a sliding window of 5 seconds
-                .aggregate(new CountAggregator()); // Apply the CountAggregator to count the elements
+        // Create a Kafka consumer
+        FlinkKafkaConsumer<String> kafkaConsumer = new FlinkKafkaConsumer<>("topic", new SimpleStringSchema(), props);
 
-        // Print the result to the console
-        resultStream.print();
+        // Add the Kafka consumer as a data source
+        DataStream<String> inputStream = env.addSource(kafkaConsumer);
+
+        // Parse the JSON input and extract the necessary fields
+        DataStream<MyData> dataStream = inputStream.map(json -> {
+            ObjectMapper mapper = new ObjectMapper();
+            try {
+                MyData data = mapper.readValue(json, MyData.class);
+                return data;
+            } catch (IOException e) {
+                e.printStackTrace();
+                return null;
+            }
+        }).filter(data -> data != null);
+
+        // Assign event time timestamps
+        DataStream<MyData> timestampedStream = dataStream.assignTimestampsAndWatermarks(
+                new AscendingTimestampExtractor<MyData>() {
+                    @Override
+                    public long extractAscendingTimestamp(MyData element) {
+                        return element.getTimestamp();
+                    }
+                });
+
+        // Apply the sliding window and keyBy operation
+        DataStream<MyAggregatedData> aggregatedStream = timestampedStream
+                .keyBy(MyData::getKey)
+                .window(SlidingEventTimeWindows.of(Time.seconds(10), Time.seconds(5)))
+                .aggregate(new MyAggregationFunction());
+
+        // Print the aggregated results
+        aggregatedStream.print();
 
         // Execute the job
-        env.execute("Data Aggregation Example");
+        env.execute("Kafka Data Aggregation Example");
     }
 
-    // Custom AggregateFunction to count the elements in the window
-    public static class CountAggregator implements AggregateFunction<Tuple2<String, Integer>, Integer, Tuple2<String, Integer>> {
+    private static class MyData {
+        private String key;
+        private long timestamp;
+        private int value;
 
+        public String getKey() {
+            return key;
+        }
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+
+        public int getValue() {
+            return value;
+        }
+    }
+
+    private static class MyAggregatedData {
+        private String key;
+        private int sum;
+        private int count;
+
+        public MyAggregatedData(String key, int sum, int count) {
+            this.key = key;
+            this.sum = sum;
+            this.count = count;
+        }
+
+        public String getKey() {
+            return key;
+        }
+
+        public int getSum() {
+            return sum;
+        }
+
+        public int getCount() {
+            return count;
+        }
+    }
+
+    private static class MyAggregationFunction implements AggregateFunction<MyData, MyAggregatedData, MyAggregatedData> {
         @Override
-        public Integer createAccumulator() {
-            return 0;
+        public MyAggregatedData createAccumulator() {
+            return new MyAggregatedData("", 0, 0);
         }
 
         @Override
-        public Integer add(Tuple2<String, Integer> value, Integer accumulator) {
-            return accumulator + 1;
+        public MyAggregatedData add(MyData value, MyAggregatedData accumulator) {
+            accumulator.key = value.key;
+            accumulator.sum += value.value;
+            accumulator.count += 1;
+            return accumulator;
         }
 
         @Override
-        public Tuple2<String, Integer> getResult(Integer accumulator) {
-            return new Tuple2<>("Window", accumulator);
+        public MyAggregatedData getResult(MyAggregatedData accumulator) {
+            return accumulator;
         }
 
         @Override
-        public Integer merge(Integer a, Integer b) {
-            return a + b;
+        public MyAggregatedData merge(MyAggregatedData a, MyAggregatedData b) {
+            a.sum += b.sum;
+            a.count += b.count;
+            return a;
         }
     }
 }
-
