@@ -266,3 +266,64 @@ public class KafkaDataAggregationExample {
         }
     }
 }
+====================================================================================================================================
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.windowing.assigners.SlidingProcessingTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
+
+public class SlidingWindowExample {
+    public static void main(String[] args) throws Exception {
+        // Set up the execution environment
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        // Create a data stream from a source (replace with your own source)
+        DataStream<Integer> dataStream = env.fromElements(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+
+        // Apply the sliding window operation
+        DataStream<Double> resultStream = dataStream
+                .windowAll(SlidingProcessingTimeWindows.of(Time.minutes(10), Time.minutes(1)))
+                .aggregate(new SumAggregateFunction());
+
+        // Print the result to stdout (replace with your own sink)
+        resultStream.print();
+
+        // Execute the Flink job
+        env.execute("Sliding Window Example");
+    }
+
+    public static class SumAggregateFunction implements AggregateFunction<Integer, SumAccumulator, Double> {
+        @Override
+        public SumAccumulator createAccumulator() {
+            return new SumAccumulator();
+        }
+
+        @Override
+        public SumAccumulator add(Integer value, SumAccumulator accumulator) {
+            accumulator.sum += value;
+            accumulator.count++;
+            return accumulator;
+        }
+
+        @Override
+        public Double getResult(SumAccumulator accumulator) {
+            return accumulator.sum / accumulator.count;
+        }
+
+        @Override
+        public SumAccumulator merge(SumAccumulator a, SumAccumulator b) {
+            a.sum += b.sum;
+            a.count += b.count;
+            return a;
+        }
+    }
+
+    public static class SumAccumulator {
+        public int sum;
+        public int count;
+    }
+}
+
+
