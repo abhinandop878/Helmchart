@@ -331,3 +331,72 @@ public class SlidingWindowExample {
 
 import org.apache.flink.api.java.tuple.Tuple2; import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction; import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows; import org.apache.flink.streaming.api.windowing.evictors.CountEvictor; import org.apache.flink.streaming.api.windowing.time.Time; import org.apache.flink.streaming.api.windowing.triggers.CountTrigger; import org.apache.flink.streaming.api.windowing.windows.TimeWindow; import org.apache.flink.util.Collector; public class FirstDataEvictionExample { public static void main(String[] args) throws Exception { StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(); // Create a stream of (key, value) tuples // ... KeyedStream<Tuple2<String, Integer>, String> keyedStream = input.keyBy(tuple -> tuple.f0); DataStream<String> result = keyedStream .window(TumblingEventTimeWindows.of(Time.seconds(5))) .evictor(CountEvictor.of(1)) // Evict after the first element .trigger(CountTrigger.of(1)) // Trigger after the first element .process(new ProcessWindowFunction<Tuple2<String, Integer>, String, String, TimeWindow>() { @Override public void process(String key, Context context, Iterable<Tuple2<String, Integer>> input, Collector<String> out) throws Exception { // Your processing logic here // Collect the elements and emit the result StringBuilder resultBuilder = new StringBuilder(); for (Tuple2<String, Integer> element : input) { resultBuilder.append(element.f0).append(":").append(element.f1).append(","); } out.collect(resultBuilder.toString()); } }); result.print(); env.execute("First Data Eviction Example"); } }
 
+
+
+
+
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.kstream.*;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.Properties;
+
+public class CustomWindowProcessor {
+
+    public static void main(String[] args) {
+        // Set up Kafka Streams configuration
+        Properties props = new Properties();
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "custom-window-processor");
+        props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+
+        // Create the StreamsBuilder object
+        StreamsBuilder builder = new StreamsBuilder();
+
+        // Read from the "input" topic
+        KStream<String, String> inputStream = builder.stream("input");
+
+        // Parse JSON data
+        KStream<String, JsonNode> parsedStream = inputStream.mapValues(value -> parseJson(value));
+
+        // Handle the first data after 10 minutes
+        parsedStream
+                .groupByKey()
+                .windowedBy(TimeWindows.of(Duration.ofMinutes(10)).grace(Duration.ZERO))
+                .reduce((value1, value2) -> value2)
+                .toStream()
+                .foreach((key, value) -> System.out.println("Handling first data: " + value));
+
+        // Create windows of size 10 and interval of 1 minute
+        parsedStream
+                .groupByKey()
+                .windowedBy(TimeWindows.of(Duration.ofMinutes(10)).advanceBy(Duration.ofMinutes(1)))
+                .count()
+                .filter((key, count) -> count <= 21)
+                .toStream()
+                .foreach((key, count) -> System.out.println("Window " + key.window().toString() + " - Count: " + count));
+
+        // Build and start the Kafka Streams application
+        KafkaStreams streams = new KafkaStreams(builder.build(), props);
+        streams.start();
+
+        // Add shutdown hook to gracefully close the Streams application
+        Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
+    }
+
+    private static JsonNode parseJson(String json) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readTree(json);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+}
+
