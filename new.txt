@@ -407,3 +407,62 @@ public class CustomWindowProcessor {
 
 import org.apache.flink.api.java.tuple.Tuple2; import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction; import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows; import org.apache.flink.streaming.api.windowing.evictors.CountEvictor; import org.apache.flink.streaming.api.windowing.time.Time; import org.apache.flink.streaming.api.windowing.triggers.CountTrigger; import org.apache.flink.streaming.api.windowing.windows.TimeWindow; import org.apache.flink.util.Collector; public class FirstDataEvictionExample { public static void main(String[] args) throws Exception { StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(); // Create a stream of (key, value) tuples // ... KeyedStream<Tuple2<String, Integer>, String> keyedStream = input.keyBy(tuple -> tuple.f0); DataStream<String> result = keyedStream .window(TumblingEventTimeWindows.of(Time.seconds(5))) .evictor(CountEvictor.of(1)) // Evict after the first element .trigger(CountTrigger.of(1)) // Trigger after the first element .process(new ProcessWindowFunction<Tuple2<String, Integer>, String, String, TimeWindow>() { @Override public void process(String key, Context context, Iterable<Tuple2<String, Integer>> input, Collector<String> out) throws Exception { // Your processing logic here // Collect the elements and emit the result StringBuilder resultBuilder = new StringBuilder(); for (Tuple2<String, Integer> element : input) { resultBuilder.append(element.f0).append(":").append(element.f1).append(","); } out.collect(resultBuilder.toString()); } }); result.print(); env.execute("First Data Eviction Example"); } }
 
+
+
+
+
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.windowing.assigners.SlidingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+
+public class CustomWindowExample {
+
+    public static void main(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        // Create a stream of data
+        DataStream<Long> dataStream = env.generateSequence(1, 100);
+
+        // Create a sliding window of 30 minutes and a sliding interval of 1 minute
+        DataStream<Tuple2<Long, Integer>> windowedStream = dataStream
+                .keyBy(x -> x)
+                .window(SlidingEventTimeWindows.of(Time.minutes(30), Time.minutes(1)))
+                .aggregate(new CountFunction());
+
+        // Create a tumbling window of 10 minutes inside the sliding window
+        windowedStream = windowedStream.window(TumblingEventTimeWindows.of(Time.minutes(10)));
+
+        // Print the results
+        windowedStream.print();
+
+        env.execute();
+    }
+
+    private static class CountFunction implements AggregateFunction<Long, Tuple2<Long, Integer>, Integer> {
+
+        @Override
+        public Tuple2<Long, Integer> createAccumulator() {
+            return new Tuple2<>(0L, 0);
+        }
+
+        @Override
+        public Tuple2<Long, Integer> add(Long value, Tuple2<Long, Integer> accumulator) {
+            return new Tuple2<>(accumulator.f0, accumulator.f1 + 1);
+        }
+
+        @Override
+        public Integer getResult(Tuple2<Long, Integer> accumulator) {
+            return accumulator.f1;
+        }
+
+        @Override
+        public Tuple2<Long, Integer> merge(Tuple2<Long, Integer> a, Tuple2<Long, Integer> b) {
+            return new Tuple2<>(a.f0, a.f1 + b.f1);
+        }
+    }
+}
+
