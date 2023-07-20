@@ -18,3 +18,29 @@ spec:
         pollingInterval: 30 # Set a polling interval for KEDA to check scaling rules
         cpu:
           targetAverageUtilization: 75 # CPU usage percentage for scaling (75% in this example)
+
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: my-app-container
+          image: your-app-image:tag
+          resources:
+            requests:
+              cpu: "200m" # Set an appropriate value based on your application's requirements
+            limits:
+              cpu: "500m" # Set an appropriate value based on your application's requirements
