@@ -44,3 +44,32 @@ spec:
               cpu: "200m" # Set an appropriate value based on your application's requirements
             limits:
               cpu: "500m" # Set an appropriate value based on your application's requirements
+
+
+
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: my-app-scaledobject
+spec:
+  scaleTargetRef:
+    deploymentName: my-app # Point to your Deployment's name
+  triggers:
+    - type: cpu
+      metadata:
+        minPollingInterval: 5 # Set the polling interval for CPU utilization checks
+      authenticationRef:
+        name: "" # Optional: If you have an authentication method configured for KEDA
+      scaler:
+        minReplicaCount: 1
+        maxReplicaCount: 10 # Set an appropriate maximum replica count
+        cooldownPeriod: 60 # Set a cooldown period (in seconds) to avoid rapid scaling
+        pollingInterval: 30 # Set a polling interval for KEDA to check scaling rules
+        custom:
+          metricsQuery: 'avg(rate(container_cpu_usage_seconds_total{container_name!="POD"}[1m])) by (pod)'
+          triggerMetadata: '{"type": "pods"}'
+          maxReplicaCount: 10
+          minReplicaCount: 1
+          cooldownPeriod: 60
+
